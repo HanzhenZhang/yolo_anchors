@@ -138,7 +138,17 @@ class ComputeLoss:
                     # Regression
                     pxy = pxy.sigmoid() * 2 - 0.5
                     #pwh = (pwh.sigmoid() * 2) ** 2 * anchors[i]
-                    pwh = torch.pow(anchors[i], pwh.sigmoid() + 1)/self.ifratio[i]
+                    ######
+                    ######
+                    ratio = self.ifratio[i // 3]
+                    if i % 3 == 1:
+                        ratio = torch.tensor([ratio * 2, ratio], device=self.device)
+                    if i % 3 == 2:
+                        ratio = torch.tensor([ratio, ratio * 2], device=self.device)
+                    ######
+                    ######
+
+                    pwh = torch.pow(anchors[i], pwh.sigmoid() + 1)/ratio
                     pbox = torch.cat((pxy, pwh), 1)  # predicted box
                     iou = bbox_iou(pbox, tbox[i], CIoU=True).squeeze()  # iou(prediction, target)
                     lbox += (1.0 - iou).mean()  # iou loss
@@ -163,9 +173,13 @@ class ComputeLoss:
                     #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
 
             obji = self.BCEobj(pi[..., 4], tobj)
-            lobj += obji * self.balance[i]  # obj loss
+            #####
+            #####
+            lobj += obji * self.balance[i // 3]  # obj loss
             if self.autobalance:
-                self.balance[i] = self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
+                self.balance[i // 3] = self.balance[i // 3] * 0.9999 + 0.0001 / obji.detach().item()
+            #####
+            #####
 
         if self.autobalance:
             self.balance = [x / self.balance[self.ssi] for x in self.balance]
@@ -196,8 +210,17 @@ class ComputeLoss:
             ],
             device=self.device).float() * g  # offsets
 
-        for i in range(self.nl):
-            anchors = self.anchors[i]
+        ######
+        ######
+        for i in range(self.nl * 3):
+            anchors = self.anchors[i // 3]
+            if i % 3 == 1:
+                anchors[0][1] = anchors[0][1] * 2
+            if i % 3 == 2:
+                anchors[0][0] = anchors[0][0] * 2
+        ######
+        ######
+
             gain[2:6] = torch.tensor(p[i].shape)[[3, 2, 3, 2]]  # xyxy gain
 
             # Match targets to anchors
@@ -209,7 +232,20 @@ class ComputeLoss:
 
             if nt:
                 #r = t[:, :, 4:6]*anchors[0]
-                r = t[:, :, 4:6]*self.ifratio[i]
+                ######
+                ######
+                ratio = self.ifratio[i // 3]
+                if i % 3 == 1:
+                    ratio = torch.tensor([ratio * 2, ratio], device=self.device)
+                    r = t[:, :, 4:6] * ratio
+                if i % 3 == 2:
+                    ratio = torch.tensor([ratio, ratio * 2], device=self.device)
+                    r = t[:, :, 4:6] * ratio
+                if i % 3 == 0:
+                    r = t[:, :, 4:6] * ratio
+                ######
+                ######
+
                 r = torch.log(r)/torch.log(anchors[0])
 
                 j = torch.max(r[:,:,0], r[:,:,1]) <= 2

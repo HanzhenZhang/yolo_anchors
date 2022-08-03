@@ -14,7 +14,7 @@
             "args": [
                 "--data", "coco128.yaml",
                 "--cfg","yolov5n.yaml",
-                "--batch-size", "16"
+                "--batch-size", "2"
         ]
 
         }

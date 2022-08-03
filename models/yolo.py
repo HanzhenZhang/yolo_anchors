@@ -44,41 +44,70 @@ class Detect(nn.Module):
         self.nc = nc  # number of classes 80
         self.no = nc + 5  # number of outputs per anchor # classes + xywhc
 
-        self.nl = len(anchors)  # number of detection layers?
+        ######
+        # self.nl = len(anchors) # number of detection layers?
+        self.nl = len(anchors)
+        ######
 
         self.na = len(anchors[0]) // 2  # number of anchors
         self.grid = [torch.zeros(1)] * self.nl  # init grid [0, 0, 0]
         self.anchor_grid = [torch.zeros(1)] * self.nl  # init anchor grid [0, 0, 0]
         self.register_buffer('anchors', torch.tensor(anchors).float().view(self.nl, -1, 2))  # shape(nl,na,2)
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
+        ######
+        self.pool_1_2 = nn.MaxPool2d([1, 2], 1)
+        self.pool_2_1 = nn.MaxPool2d([2, 1], 1)
+        ######
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
 
     def forward(self, x):
-        z = []  # inference output
+        z = []  # feature map
+        pred = [] # prediction
         for i in range(self.nl):
+
+            #####
+            #####
             x[i] = self.m[i](x[i])  # conv
+            poolmap_1_2 = self.pool_1_2(x[i]) # 1 * 2
+            poolmap_2_1 = self.pool_2_1(x[i]) # 2 * 1
             bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
             x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous() # x[0](1, 1, 32, 32, 85)
+            z.append(x[i])
+            poolmap_1_2 = poolmap_1_2.view(bs, self.na, self.no, ny, nx - 1).permute(0, 1, 3, 4, 2).contiguous()
+            z.append(poolmap_1_2)
+            poolmap_2_1 = poolmap_2_1.view(bs, self.na, self.no, ny - 1, nx).permute(0, 1, 3, 4, 2).contiguous()
+            z.append(poolmap_2_1)
 
             if not self.training:  # inference
                 if self.onnx_dynamic or self.grid[i].shape[2:4] != x[i].shape[2:4]:
                     self.grid[i], self.anchor_grid[i] = self._make_grid(nx, ny, i)
-
+                grid_1_2, anchor_grid_1_2 = self._make_grid(nx - 1, ny, i)
+                grid_2_1, anchor_grid_2_1 = self._make_grid(nx, ny - 1, i)
                 y = x[i].sigmoid() # (0, 1)
+                poolmap_1_2 = poolmap_1_2.sigmoid()
+                poolmap_2_1 = poolmap_2_1.sigmoid()
                 if self.inplace:
                     y[..., 0:2] = (y[..., 0:2] * 2 + self.grid[i]) * self.stride[i]  # xy
+                    poolmap_1_2[..., 0:2] = (poolmap_1_2[..., 0:2] * 2 + grid_1_2) * self.stride[i]  # xy
+                    poolmap_2_1[..., 0:2] = (poolmap_2_1[..., 0:2] * 2 + grid_2_1) * self.stride[i]  # xy
                     #y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
                     for num_of_anchor in range(y.shape[1]):
                         y[:, num_of_anchor, ..., 2:4] = torch.pow(self.anchors[i][num_of_anchor], y[:, num_of_anchor, ..., 2:4] + 1)
+                        poolmap_1_2[:, num_of_anchor, ..., 2:4] = torch.pow(self.anchors[i][num_of_anchor], poolmap_1_2[:, num_of_anchor, ..., 2:4] + 1)
+                        poolmap_2_1[:, num_of_anchor, ..., 2:4] = torch.pow(self.anchors[i][num_of_anchor], poolmap_2_1[:, num_of_anchor, ..., 2:4] + 1)
                     # y[..., 2:4] = torch.pow(self.anchors[i], y[..., 2:4] + 1)  # y^wh
                 else:  # for YOLOv5 on AWS Inferentia https://github.com/ultralytics/yolov5/pull/2953
                     xy, wh, conf = y.split((2, 2, self.nc + 1), 4)  # y.tensor_split((2, 4, 5), 4)  # torch 1.8.0
                     xy = (xy * 2 + self.grid[i]) * self.stride[i]  # xy
                     wh = (wh * 2) ** 2 * self.anchor_grid[i]  # wh
                     y = torch.cat((xy, wh, conf), 4)
-                z.append(y.view(bs, -1, self.no))
+                pred.append(y.view(bs, -1, self.no))
+                pred.append(poolmap_1_2.view(bs, -1, self.no))
+                pred.append(poolmap_2_1.view(bs, -1, self.no))
 
-        return x if self.training else (torch.cat(z, 1),) if self.export else (torch.cat(z, 1), x)
+        return z if self.training else (torch.cat(pred, 1),) if self.export else (torch.cat(pred, 1), z)
+        #####
+        #####
 
     def _make_grid(self, nx=20, ny=20, i=0):
         d = self.anchors[i].device
@@ -128,7 +157,10 @@ class Model(nn.Module):
         if isinstance(m, Detect):
             s = 256  # 2x min stride
             m.inplace = self.inplace
-            m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+            #####
+            # m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+            m.stride = torch.tensor([8, 16, 32])
+            #####
             check_anchor_order(m)  # must be in pixel-space (not grid-space)
             #m.anchors /= m.stride.view(-1, 1, 1)
             self.stride = m.stride
