@@ -142,9 +142,9 @@ class ComputeLoss:
                     ######
                     ratio = self.ifratio[i // 3]
                     if i % 3 == 1:
-                        ratio = torch.tensor([ratio * 2, ratio], device=self.device)
-                    if i % 3 == 2:
                         ratio = torch.tensor([ratio, ratio * 2], device=self.device)
+                    if i % 3 == 2:
+                        ratio = torch.tensor([ratio * 2, ratio], device=self.device)
                     ######
                     ######
 
@@ -213,11 +213,12 @@ class ComputeLoss:
         ######
         ######
         for i in range(self.nl * 3):
-            anchors = self.anchors[i // 3]
+            if i % 3 == 0:
+                anchors = self.anchors[i // 3]
             if i % 3 == 1:
-                anchors[0][1] = anchors[0][1] * 2
+                anchors = torch.tensor([[self.anchors[i // 3][0][0], self.anchors[i // 3][0][0] * 2]], device=self.device)
             if i % 3 == 2:
-                anchors[0][0] = anchors[0][0] * 2
+                anchors = torch.tensor([[self.anchors[i // 3][0][0] * 2, self.anchors[i // 3][0][0]]], device=self.device)
         ######
         ######
 
@@ -236,12 +237,18 @@ class ComputeLoss:
                 ######
                 ratio = self.ifratio[i // 3]
                 if i % 3 == 1:
-                    ratio = torch.tensor([ratio * 2, ratio], device=self.device)
-                    r = t[:, :, 4:6] * ratio
-                if i % 3 == 2:
+                    # filter = t[:, :, 5] / t[:, :, 4] > 1
+                    # t = t[filter]
                     ratio = torch.tensor([ratio, ratio * 2], device=self.device)
                     r = t[:, :, 4:6] * ratio
+                if i % 3 == 2:
+                    # filter = t[:, :, 4] / t[:, :, 5] > 1
+                    # t = t[filter]
+                    ratio = torch.tensor([ratio * 2, ratio], device=self.device)
+                    r = t[:, :, 4:6] * ratio
                 if i % 3 == 0:
+                    # filter = (t[:, :, 5] / t[:, :, 4] > 1.5) & (t[:, :, 5] / t[:, :, 4] < 1.5)
+                    # t = t[filter]
                     r = t[:, :, 4:6] * ratio
                 ######
                 ######

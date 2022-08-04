@@ -55,14 +55,17 @@ class Detect(nn.Module):
         self.register_buffer('anchors', torch.tensor(anchors).float().view(self.nl, -1, 2))  # shape(nl,na,2)
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
         ######
-        self.pool_1_2 = nn.MaxPool2d([1, 2], 1)
-        self.pool_2_1 = nn.MaxPool2d([2, 1], 1)
+        self.pool_1_2 = nn.AvgPool2d([1, 2], 1)
+        self.pool_2_1 = nn.AvgPool2d([2, 1], 1)
         ######
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
 
     def forward(self, x):
         z = []  # feature map
         pred = [] # prediction
+        out1 = []
+        out2 = []
+        out3 = []
         for i in range(self.nl):
 
             #####
@@ -86,21 +89,37 @@ class Detect(nn.Module):
                 y = x[i].sigmoid() # (0, 1)
                 poolmap_1_2 = poolmap_1_2.sigmoid()
                 poolmap_2_1 = poolmap_2_1.sigmoid()
+                d = self.anchors[i].device
                 if self.inplace:
                     y[..., 0:2] = (y[..., 0:2] * 2 + self.grid[i]) * self.stride[i]  # xy
                     poolmap_1_2[..., 0:2] = (poolmap_1_2[..., 0:2] * 2 + grid_1_2) * self.stride[i]  # xy
                     poolmap_2_1[..., 0:2] = (poolmap_2_1[..., 0:2] * 2 + grid_2_1) * self.stride[i]  # xy
                     #y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
+                    anchor_1_2 = torch.tensor([self.anchors[i][0][0], self.anchors[i][0][0] * 2], device=d)
+                    anchor_2_1 = torch.tensor([self.anchors[i][0][0] * 2, self.anchors[i][0][0]], device=d)
                     for num_of_anchor in range(y.shape[1]):
                         y[:, num_of_anchor, ..., 2:4] = torch.pow(self.anchors[i][num_of_anchor], y[:, num_of_anchor, ..., 2:4] + 1)
-                        poolmap_1_2[:, num_of_anchor, ..., 2:4] = torch.pow(self.anchors[i][num_of_anchor], poolmap_1_2[:, num_of_anchor, ..., 2:4] + 1)
-                        poolmap_2_1[:, num_of_anchor, ..., 2:4] = torch.pow(self.anchors[i][num_of_anchor], poolmap_2_1[:, num_of_anchor, ..., 2:4] + 1)
+                        poolmap_1_2[:, num_of_anchor, ..., 2:4] = torch.pow(anchor_1_2, poolmap_1_2[:, num_of_anchor, ..., 2:4] + 1)
+                        poolmap_2_1[:, num_of_anchor, ..., 2:4] = torch.pow(anchor_2_1, poolmap_2_1[:, num_of_anchor, ..., 2:4] + 1)
                     # y[..., 2:4] = torch.pow(self.anchors[i], y[..., 2:4] + 1)  # y^wh
                 else:  # for YOLOv5 on AWS Inferentia https://github.com/ultralytics/yolov5/pull/2953
                     xy, wh, conf = y.split((2, 2, self.nc + 1), 4)  # y.tensor_split((2, 4, 5), 4)  # torch 1.8.0
                     xy = (xy * 2 + self.grid[i]) * self.stride[i]  # xy
                     wh = (wh * 2) ** 2 * self.anchor_grid[i]  # wh
                     y = torch.cat((xy, wh, conf), 4)
+                # sq = ((y[..., 2] / y[..., 3]) <= 1.5) & ((y[..., 3] / y[..., 2]) <= 1.5)
+                # wh12 = ((poolmap_1_2[..., 2] / poolmap_1_2[..., 3]) >= 1) 
+                # wh21 = ((poolmap_2_1[..., 3] / poolmap_2_1[..., 2]) >= 1)
+                # for xi, x in enumerate(y):
+                #     x = x[sq[xi]]
+                #     out1.append(x)
+                # for xi, x in enumerate(poolmap_1_2):
+                #     x = x[wh12[xi]]
+                #     out2.append(x)
+                # for xi, x in enumerate(poolmap_2_1):
+                #     x = x[wh21[xi]]
+                #     out3.append(x)
+                # pred.append([out1, out2, out3])
                 pred.append(y.view(bs, -1, self.no))
                 pred.append(poolmap_1_2.view(bs, -1, self.no))
                 pred.append(poolmap_2_1.view(bs, -1, self.no))
