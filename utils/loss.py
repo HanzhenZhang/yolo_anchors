@@ -212,13 +212,13 @@ class ComputeLoss:
 
         ######
         ######
-        for i in range(self.nl * 3):
-            if i % 3 == 0:
+        for i in range(self.nl * 2):
+            if i % 2 == 0:
                 anchors = self.anchors[i // 3]
-            if i % 3 == 1:
+            if i % 2 == 1:
                 anchors = torch.tensor([[self.anchors[i // 3][0][0], self.anchors[i // 3][0][0] * 2]], device=self.device)
-            if i % 3 == 2:
-                anchors = torch.tensor([[self.anchors[i // 3][0][0] * 2, self.anchors[i // 3][0][0]]], device=self.device)
+            # if i % 3 == 2:
+            #     anchors = torch.tensor([[self.anchors[i // 3][0][0] * 2, self.anchors[i // 3][0][0]]], device=self.device)
         ######
         ######
 
@@ -236,17 +236,17 @@ class ComputeLoss:
                 ######
                 ######
                 ratio = self.ifratio[i // 3]
-                if i % 3 == 1:
+                if i % 2 == 1:
                     # filter = t[:, :, 5] / t[:, :, 4] > 1
                     # t = t[filter]
                     ratio = torch.tensor([ratio, ratio * 2], device=self.device)
                     r = t[:, :, 4:6] * ratio
-                if i % 3 == 2:
-                    # filter = t[:, :, 4] / t[:, :, 5] > 1
-                    # t = t[filter]
-                    ratio = torch.tensor([ratio * 2, ratio], device=self.device)
-                    r = t[:, :, 4:6] * ratio
-                if i % 3 == 0:
+                # if i % 2 == 2:
+                #     # filter = t[:, :, 4] / t[:, :, 5] > 1
+                #     # t = t[filter]
+                #     ratio = torch.tensor([ratio * 2, ratio], device=self.device)
+                #     r = t[:, :, 4:6] * ratio
+                if i % 2 == 0:
                     # filter = (t[:, :, 5] / t[:, :, 4] > 1.5) & (t[:, :, 5] / t[:, :, 4] < 1.5)
                     # t = t[filter]
                     r = t[:, :, 4:6] * ratio
@@ -255,10 +255,22 @@ class ComputeLoss:
 
                 r = torch.log(r)/torch.log(anchors[0])
 
+                ######
+                ######
+                if i % 2 == 1:
+                    filter = r[:,:,1] / r[:,:,0] > 1
+                # if i % 3 == 2:
+                #     filter = r[:,:,0] / r[:,:,1] > 1
+                if i % 2 == 0:
+                    filter = (r[:,:,0] / r[:,:,1] < 1.5) & (r[:,:,1] / r[:,:,0] < 1.5)
+                ######
+                ######
+
                 j = torch.max(r[:,:,0], r[:,:,1]) <= 2
                 k = torch.min(r[:,:,0], r[:,:,1]) >= 1
                 #k = torch.min(t[:,:,4], t[:,:,5]) >= 1
                 j = torch.logical_and(j, k)
+                j = torch.logical_and(j, filter)
                 t = t[j]  # filter
 
                 '''
