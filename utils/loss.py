@@ -140,11 +140,11 @@ class ComputeLoss:
                     #pwh = (pwh.sigmoid() * 2) ** 2 * anchors[i]
                     ######
                     ######
-                    ratio = self.ifratio[i // 3]
-                    if i % 3 == 1:
+                    ratio = self.ifratio[i // 2]
+                    if i % 2 == 1:
                         ratio = torch.tensor([ratio, ratio * 2], device=self.device)
-                    if i % 3 == 2:
-                        ratio = torch.tensor([ratio * 2, ratio], device=self.device)
+                    # if i % 3 == 2:
+                    #     ratio = torch.tensor([ratio * 2, ratio], device=self.device)
                     ######
                     ######
 
@@ -175,9 +175,9 @@ class ComputeLoss:
             obji = self.BCEobj(pi[..., 4], tobj)
             #####
             #####
-            lobj += obji * self.balance[i // 3]  # obj loss
+            lobj += obji * self.balance[i // 2]  # obj loss
             if self.autobalance:
-                self.balance[i // 3] = self.balance[i // 3] * 0.9999 + 0.0001 / obji.detach().item()
+                self.balance[i // 2] = self.balance[i // 2] * 0.9999 + 0.0001 / obji.detach().item()
             #####
             #####
 
