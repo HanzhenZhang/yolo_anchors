@@ -117,7 +117,7 @@ class ComputeLoss:
         self.nl = m.nl  # number of layers
         self.anchors = m.anchors
         self.device = device
-        self.ifratio = torch.tensor([8,16,32],device=device) #image/feature
+        self.ifratio = torch.tensor([[8, 16],[16, 32],[32, 64]],device=device) #image/feature
 
     def __call__(self, p, targets):  # predictions, targets
         lcls = torch.zeros(1, device=self.device)  # class loss
@@ -140,9 +140,9 @@ class ComputeLoss:
                     #pwh = (pwh.sigmoid() * 2) ** 2 * anchors[i]
                     ######
                     ######
-                    ratio = self.ifratio[i // 2]
-                    if i % 2 == 1:
-                        ratio = torch.tensor([ratio, ratio * 2], device=self.device)
+                    ratio = self.ifratio[i]
+                    # if i % 2 == 1:
+                        # ratio = torch.tensor([ratio, ratio * 2], device=self.device)
                     # if i % 3 == 2:
                     #     ratio = torch.tensor([ratio * 2, ratio], device=self.device)
                     ######
@@ -175,9 +175,9 @@ class ComputeLoss:
             obji = self.BCEobj(pi[..., 4], tobj)
             #####
             #####
-            lobj += obji * self.balance[i // 2]  # obj loss
+            lobj += obji * self.balance[i]  # obj loss
             if self.autobalance:
-                self.balance[i // 2] = self.balance[i // 2] * 0.9999 + 0.0001 / obji.detach().item()
+                self.balance[i] = self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
             #####
             #####
 
@@ -212,11 +212,12 @@ class ComputeLoss:
 
         ######
         ######
-        for i in range(self.nl * 2):
-            if i % 2 == 0:
-                anchors = self.anchors[i // 3]
-            if i % 2 == 1:
-                anchors = torch.tensor([[self.anchors[i // 3][0][0], self.anchors[i // 3][0][0] * 2]], device=self.device)
+        for i in range(self.nl):
+            anchors = self.anchors[i]
+        #     if i % 2 == 0:
+        #         anchors = self.anchors[i // 3]
+        #     if i % 2 == 1:
+        #         anchors = torch.tensor([[self.anchors[i // 3][0][0], self.anchors[i // 3][0][0] * 2]], device=self.device)
             # if i % 3 == 2:
             #     anchors = torch.tensor([[self.anchors[i // 3][0][0] * 2, self.anchors[i // 3][0][0]]], device=self.device)
         ######
@@ -235,21 +236,21 @@ class ComputeLoss:
                 #r = t[:, :, 4:6]*anchors[0]
                 ######
                 ######
-                ratio = self.ifratio[i // 3]
-                if i % 2 == 1:
-                    # filter = t[:, :, 5] / t[:, :, 4] > 1
-                    # t = t[filter]
-                    ratio = torch.tensor([ratio, ratio * 2], device=self.device)
-                    r = t[:, :, 4:6] * ratio
+                ratio = self.ifratio[i]
+                # if i % 2 == 1:
+                #     # filter = t[:, :, 5] / t[:, :, 4] > 1
+                #     # t = t[filter]
+                #     ratio = torch.tensor([ratio, ratio * 2], device=self.device)
+                #     r = t[:, :, 4:6] * ratio
                 # if i % 2 == 2:
                 #     # filter = t[:, :, 4] / t[:, :, 5] > 1
                 #     # t = t[filter]
                 #     ratio = torch.tensor([ratio * 2, ratio], device=self.device)
                 #     r = t[:, :, 4:6] * ratio
-                if i % 2 == 0:
+                # if i % 2 == 0:
                     # filter = (t[:, :, 5] / t[:, :, 4] > 1.5) & (t[:, :, 5] / t[:, :, 4] < 1.5)
                     # t = t[filter]
-                    r = t[:, :, 4:6] * ratio
+                r = t[:, :, 4:6] * ratio
                 ######
                 ######
 
@@ -257,12 +258,12 @@ class ComputeLoss:
 
                 ######
                 ######
-                if i % 2 == 1:
-                    filter = r[:,:,1] / r[:,:,0] > 1
+                # if i % 2 == 1:
+                # filter = r[:,:,1] / r[:,:,0] > 1
                 # if i % 3 == 2:
                 #     filter = r[:,:,0] / r[:,:,1] > 1
-                if i % 2 == 0:
-                    filter = (r[:,:,0] / r[:,:,1] < 1.5) & (r[:,:,1] / r[:,:,0] < 1.5)
+                # if i % 2 == 0:
+                #     filter = (r[:,:,0] / r[:,:,1] < 1.5) & (r[:,:,1] / r[:,:,0] < 1.5)
                 ######
                 ######
 
@@ -270,7 +271,7 @@ class ComputeLoss:
                 k = torch.min(r[:,:,0], r[:,:,1]) >= 1
                 #k = torch.min(t[:,:,4], t[:,:,5]) >= 1
                 j = torch.logical_and(j, k)
-                j = torch.logical_and(j, filter)
+                # j = torch.logical_and(j, filter)
                 t = t[j]  # filter
 
                 '''
