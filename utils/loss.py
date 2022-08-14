@@ -117,7 +117,7 @@ class ComputeLoss:
         self.nl = m.nl  # number of layers
         self.anchors = m.anchors
         self.device = device
-        self.ifratio = torch.tensor([[8, 16],[16, 32],[32, 64]],device=device) #image/feature
+        self.ifratio = torch.tensor([8,16,32],device=device) #image/feature
 
     def __call__(self, p, targets):  # predictions, targets
         lcls = torch.zeros(1, device=self.device)  # class loss
@@ -267,10 +267,10 @@ class ComputeLoss:
                 ######
                 ######
 
-                j = torch.max(r[:,:,0], r[:,:,1]) <= 2
-                k = torch.min(r[:,:,0], r[:,:,1]) >= 1
+                j = torch.max(r[:,:,1], r[:,:,0]) >= 1
+                # k = torch.min(r[:,:,0], r[:,:,1]) >= 1
                 #k = torch.min(t[:,:,4], t[:,:,5]) >= 1
-                j = torch.logical_and(j, k)
+                # j = torch.logical_and(j, k)
                 # j = torch.logical_and(j, filter)
                 t = t[j]  # filter
 
