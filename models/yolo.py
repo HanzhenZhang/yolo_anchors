@@ -71,6 +71,7 @@ class Detect(nn.Module):
             #####
             #####
             x[i] = self.m[i](x[i])  # conv
+            # x[i] = self.pool_1_2(x[i]) # 1 * 2
             poolmap_1_2 = self.pool_1_2(x[i]) # 1 * 2
             poolmap_2_1 = self.pool_2_1(x[i]) # 2 * 1
             bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
@@ -95,12 +96,12 @@ class Detect(nn.Module):
                     poolmap_1_2[..., 0:2] = (poolmap_1_2[..., 0:2] * 2 + grid_1_2) * self.stride[i]  # xy
                     poolmap_2_1[..., 0:2] = (poolmap_2_1[..., 0:2] * 2 + grid_2_1) * self.stride[i]  # xy
                     #y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
-                    anchor_1_2 = torch.tensor([self.anchors[i][0][0], self.anchors[i][0][0] * 2], device=d)
-                    anchor_2_1 = torch.tensor([self.anchors[i][0][0] * 2, self.anchors[i][0][0]], device=d)
+                    # anchor_1_2 = torch.tensor([self.anchors[i][0][0], self.anchors[i][0][0] * 2], device=d)
+                    # anchor_2_1 = torch.tensor([self.anchors[i][0][0] * 2, self.anchors[i][0][0]], device=d)
                     for num_of_anchor in range(y.shape[1]):
                         y[:, num_of_anchor, ..., 2:4] = torch.pow(self.anchors[i][num_of_anchor], y[:, num_of_anchor, ..., 2:4] + 1)
-                        poolmap_1_2[:, num_of_anchor, ..., 2:4] = torch.pow(anchor_1_2, poolmap_1_2[:, num_of_anchor, ..., 2:4] + 1)
-                        poolmap_2_1[:, num_of_anchor, ..., 2:4] = torch.pow(anchor_2_1, poolmap_2_1[:, num_of_anchor, ..., 2:4] + 1)
+                        poolmap_1_2[:, num_of_anchor, ..., 2:4] = torch.pow(self.anchors[i][num_of_anchor], poolmap_1_2[:, num_of_anchor, ..., 2:4] + 1)
+                        poolmap_2_1[:, num_of_anchor, ..., 2:4] = torch.pow(self.anchors[i][num_of_anchor], poolmap_2_1[:, num_of_anchor, ..., 2:4] + 1)
                     # y[..., 2:4] = torch.pow(self.anchors[i], y[..., 2:4] + 1)  # y^wh
                 else:  # for YOLOv5 on AWS Inferentia https://github.com/ultralytics/yolov5/pull/2953
                     xy, wh, conf = y.split((2, 2, self.nc + 1), 4)  # y.tensor_split((2, 4, 5), 4)  # torch 1.8.0
