@@ -109,7 +109,12 @@ class ComputeLoss:
             BCEcls, BCEobj = FocalLoss(BCEcls, g), FocalLoss(BCEobj, g)
 
         m = de_parallel(model).model[-1]  # Detect() module
-        self.balance = {3: [4.0, 1.0, 0.4]}.get(m.nl, [4.0, 1.0, 0.25, 0.06, 0.02])  # P3-P7
+            #####
+            #####
+        self.balance = {3: [4.0, 4.0, 4.0, 1.0, 1.0, 1.0, 0.4, 0.4, 0.4]}.get(m.nl, [4.0, 1.0, 0.25, 0.06, 0.02])  # P3-P7
+        self.ifratio = torch.tensor([8, 8, 8, 16, 16, 16, 32, 32, 32],device=device) #image/feature
+            #####
+            #####
         self.ssi = list(m.stride).index(16) if autobalance else 0  # stride 16 index
         self.BCEcls, self.BCEobj, self.gr, self.hyp, self.autobalance = BCEcls, BCEobj, 1.0, h, autobalance
         self.na = m.na  # number of anchors
@@ -117,7 +122,6 @@ class ComputeLoss:
         self.nl = m.nl  # number of layers
         self.anchors = m.anchors
         self.device = device
-        self.ifratio = torch.tensor([8,16,32],device=device) #image/feature
 
     def __call__(self, p, targets):  # predictions, targets
         lcls = torch.zeros(1, device=self.device)  # class loss
@@ -138,17 +142,7 @@ class ComputeLoss:
                     # Regression
                     pxy = pxy.sigmoid() * 2 - 0.5
                     #pwh = (pwh.sigmoid() * 2) ** 2 * anchors[i]
-                    ######
-                    ######
-                    ratio = self.ifratio[i]
-                    # if i % 2 == 1:
-                        # ratio = torch.tensor([ratio, ratio * 2], device=self.device)
-                    # if i % 3 == 2:
-                    #     ratio = torch.tensor([ratio * 2, ratio], device=self.device)
-                    ######
-                    ######
-
-                    pwh = torch.pow(anchors[i], pwh.sigmoid() + 1)/ratio
+                    pwh = torch.pow(anchors[i], pwh.sigmoid() + 1) / self.ifratio[i]
                     pbox = torch.cat((pxy, pwh), 1)  # predicted box
                     iou = bbox_iou(pbox, tbox[i], CIoU=True).squeeze()  # iou(prediction, target)
                     lbox += (1.0 - iou).mean()  # iou loss
@@ -173,13 +167,10 @@ class ComputeLoss:
                     #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
 
             obji = self.BCEobj(pi[..., 4], tobj)
-            #####
-            #####
             lobj += obji * self.balance[i]  # obj loss
             if self.autobalance:
                 self.balance[i] = self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
-            #####
-            #####
+
 
         if self.autobalance:
             self.balance = [x / self.balance[self.ssi] for x in self.balance]
@@ -212,14 +203,8 @@ class ComputeLoss:
 
         ######
         ######
-        for i in range(self.nl):
-            anchors = self.anchors[i]
-        #     if i % 2 == 0:
-        #         anchors = self.anchors[i // 3]
-        #     if i % 2 == 1:
-        #         anchors = torch.tensor([[self.anchors[i // 3][0][0], self.anchors[i // 3][0][0] * 2]], device=self.device)
-            # if i % 3 == 2:
-            #     anchors = torch.tensor([[self.anchors[i // 3][0][0] * 2, self.anchors[i // 3][0][0]]], device=self.device)
+        for i in range(self.nl * 3):
+            anchors = self.anchors[i // 3]
         ######
         ######
 
@@ -236,21 +221,7 @@ class ComputeLoss:
                 #r = t[:, :, 4:6]*anchors[0]
                 ######
                 ######
-                ratio = self.ifratio[i]
-                # if i % 2 == 1:
-                #     # filter = t[:, :, 5] / t[:, :, 4] > 1
-                #     # t = t[filter]
-                #     ratio = torch.tensor([ratio, ratio * 2], device=self.device)
-                #     r = t[:, :, 4:6] * ratio
-                # if i % 2 == 2:
-                #     # filter = t[:, :, 4] / t[:, :, 5] > 1
-                #     # t = t[filter]
-                #     ratio = torch.tensor([ratio * 2, ratio], device=self.device)
-                #     r = t[:, :, 4:6] * ratio
-                # if i % 2 == 0:
-                    # filter = (t[:, :, 5] / t[:, :, 4] > 1.5) & (t[:, :, 5] / t[:, :, 4] < 1.5)
-                    # t = t[filter]
-                r = t[:, :, 4:6] * ratio
+                r = t[:, :, 4:6] * self.ifratio[i]
                 ######
                 ######
 
@@ -258,20 +229,20 @@ class ComputeLoss:
 
                 ######
                 ######
-                # if i % 2 == 1:
-                # filter = r[:,:,1] / r[:,:,0] > 1
-                # if i % 3 == 2:
-                #     filter = r[:,:,0] / r[:,:,1] > 1
-                # if i % 2 == 0:
-                #     filter = (r[:,:,0] / r[:,:,1] < 1.5) & (r[:,:,1] / r[:,:,0] < 1.5)
+                if i % 2 == 1:
+                    filter = r[:,:,1] / r[:,:,0] > 1
+                if i % 3 == 2:
+                    filter = r[:,:,0] / r[:,:,1] > 1
+                if i % 2 == 0:
+                    filter = (r[:,:,0] / r[:,:,1] < 1.5) & (r[:,:,1] / r[:,:,0] < 1.5)
                 ######
                 ######
 
-                j = torch.max(r[:,:,1], r[:,:,0]) >= 1
-                # k = torch.min(r[:,:,0], r[:,:,1]) >= 1
+                j = torch.max(r[:,:,1], r[:,:,0]) <= 2
+                k = torch.min(r[:,:,0], r[:,:,1]) >= 1
                 #k = torch.min(t[:,:,4], t[:,:,5]) >= 1
-                # j = torch.logical_and(j, k)
-                # j = torch.logical_and(j, filter)
+                j = torch.logical_and(j, k)
+                j = torch.logical_and(j, filter)
                 t = t[j]  # filter
 
                 '''
